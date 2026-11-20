@@ -1,5 +1,5 @@
+import React, { useRef, useState } from 'react';
 
-import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -14,7 +14,13 @@ import {
   useCameraPermissions,
 } from 'expo-camera';
 
-export default function CameraCapture() {
+interface CameraCaptureProps {
+  onImageCaptured: (imageUri: string) => void;
+}
+
+export default function CameraCapture({
+  onImageCaptured,
+}: CameraCaptureProps) {
   const cameraRef = useRef<CameraView>(null);
 
   const [permission, requestPermission] =
@@ -25,21 +31,25 @@ export default function CameraCapture() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Permission loading
+  // Check camera permission
   if (!permission) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" />
-        <Text>Checking camera permission...</Text>
+        <ActivityIndicator size="large" color="#2563EB" />
+        <Text style={styles.description}>
+          Checking camera permission...
+        </Text>
       </View>
     );
   }
 
-  // Permission not granted
+  // Request camera permission
   if (!permission.granted) {
     return (
       <View style={styles.center}>
-        <Text style={styles.title}>Camera Permission</Text>
+        <Text style={styles.title}>
+          Camera Permission
+        </Text>
 
         <Text style={styles.description}>
           We need camera permission to capture images.
@@ -82,11 +92,29 @@ export default function CameraCapture() {
     }
   };
 
+  // Retake photo
+  const handleRetake = () => {
+    setPhotoUri(null);
+    setCameraReady(false);
+    setError(null);
+  };
+
+  // Use captured photo
+  const handleUsePhoto = () => {
+    if (!photoUri) {
+      return;
+    }
+
+    onImageCaptured(photoUri);
+  };
+
   // Captured image preview
   if (photoUri) {
     return (
       <View style={styles.container}>
-        <Text style={styles.title}>Captured Image</Text>
+        <Text style={styles.title}>
+          Captured Image
+        </Text>
 
         <Image
           source={{ uri: photoUri }}
@@ -94,17 +122,25 @@ export default function CameraCapture() {
           resizeMode="contain"
         />
 
-        <Pressable
-          style={styles.button}
-          onPress={() => {
-            setPhotoUri(null);
-            setCameraReady(false);
-          }}
-        >
-          <Text style={styles.buttonText}>
-            Retake Photo
-          </Text>
-        </Pressable>
+        <View style={styles.actionContainer}>
+          <Pressable
+            style={styles.retakeButton}
+            onPress={handleRetake}
+          >
+            <Text style={styles.buttonText}>
+              Retake Photo
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={styles.usePhotoButton}
+            onPress={handleUsePhoto}
+          >
+            <Text style={styles.buttonText}>
+              Use Photo
+            </Text>
+          </Pressable>
+        </View>
       </View>
     );
   }
@@ -126,7 +162,9 @@ export default function CameraCapture() {
       </View>
 
       {error && (
-        <Text style={styles.error}>{error}</Text>
+        <Text style={styles.error}>
+          {error}
+        </Text>
       )}
 
       <Pressable
@@ -212,6 +250,28 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     marginTop: 16,
+  },
+
+  actionContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+
+  retakeButton: {
+    flex: 1,
+    backgroundColor: '#64748B',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+
+  usePhotoButton: {
+    flex: 1,
+    backgroundColor: '#16A34A',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
   },
 
   disabledButton: {
