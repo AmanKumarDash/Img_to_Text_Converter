@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 
 import {
+  ActivityIndicator,
   Image,
   Pressable,
   SafeAreaView,
@@ -14,6 +15,8 @@ import CameraCapture from '../../../features/capture-image/ui/CameraCapture';
 export default function ScannerPage() {
   const [selectedImage, setSelectedImage] =
     useState<string | null>(null);
+  const [imageLoading, setImageLoading] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   // Image selected successfully
   if (selectedImage) {
@@ -29,11 +32,33 @@ export default function ScannerPage() {
           </Text>
         </View>
 
-        <Image
-          source={{ uri: selectedImage }}
-          style={styles.preview}
-          resizeMode="contain"
-        />
+        <View style={styles.previewContainer}>
+          {imageLoading && (
+            <View style={styles.loadingOverlay}>
+              <ActivityIndicator size="large" color="#2563EB" />
+            </View>
+          )}
+
+          {imageError ? (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>
+                Failed to load image preview.
+              </Text>
+            </View>
+          ) : (
+            <Image
+              source={{ uri: selectedImage }}
+              style={styles.preview}
+              resizeMode="cover"
+              onLoadStart={() => setImageLoading(true)}
+              onLoadEnd={() => setImageLoading(false)}
+              onError={() => {
+                setImageLoading(false);
+                setImageError(true);
+              }}
+            />
+          )}
+        </View>
 
         <View style={styles.footer}>
           <Text style={styles.successText}>
@@ -42,7 +67,11 @@ export default function ScannerPage() {
 
           <Pressable
             style={styles.retakeButton}
-            onPress={() => setSelectedImage(null)}
+            onPress={() => {
+              setSelectedImage(null);
+              setImageError(false);
+              setImageLoading(false);
+            }}
           >
             <Text style={styles.buttonText}>
               Capture Another Photo
@@ -89,10 +118,38 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
 
+  previewContainer: {
+    flex: 1,
+    marginHorizontal: 20,
+    marginVertical: 8,
+    borderRadius: 18,
+    overflow: 'hidden',
+    backgroundColor: '#E2E8F0',
+  },
+
   preview: {
     flex: 1,
     width: '100%',
-    backgroundColor: '#000000',
+  },
+
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(245, 247, 251, 0.8)',
+  },
+
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+
+  errorText: {
+    color: '#DC2626',
+    textAlign: 'center',
+    fontSize: 15,
   },
 
   footer: {
