@@ -30,6 +30,8 @@ export default function CameraCapture({
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [imageLoading, setImageLoading] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   // Check camera permission
   if (!permission) {
@@ -97,6 +99,8 @@ export default function CameraCapture({
     setPhotoUri(null);
     setCameraReady(false);
     setError(null);
+    setImageError(false);
+    setImageLoading(false);
   };
 
   // Use captured photo
@@ -116,11 +120,33 @@ export default function CameraCapture({
           Captured Image
         </Text>
 
-        <Image
-          source={{ uri: photoUri }}
-          style={styles.preview}
-          resizeMode="contain"
-        />
+        <View style={styles.previewContainer}>
+          {imageLoading && (
+            <View style={styles.loadingOverlay}>
+              <ActivityIndicator size="large" color="#2563EB" />
+            </View>
+          )}
+
+          {imageError ? (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>
+                Failed to load image preview.
+              </Text>
+            </View>
+          ) : (
+            <Image
+              source={{ uri: photoUri }}
+              style={styles.preview}
+              resizeMode="cover"
+              onLoadStart={() => setImageLoading(true)}
+              onLoadEnd={() => setImageLoading(false)}
+              onError={() => {
+                setImageLoading(false);
+                setImageError(true);
+              }}
+            />
+          )}
+        </View>
 
         <View style={styles.actionContainer}>
           <Pressable
@@ -228,11 +254,36 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
+  previewContainer: {
+    flex: 1,
+    overflow: 'hidden',
+    borderRadius: 18,
+    backgroundColor: '#E2E8F0',
+  },
+
   preview: {
     flex: 1,
     width: '100%',
-    backgroundColor: '#000000',
-    borderRadius: 18,
+  },
+
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(245, 247, 251, 0.8)',
+  },
+
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+
+  errorText: {
+    color: '#DC2626',
+    textAlign: 'center',
+    fontSize: 15,
   },
 
   button: {
