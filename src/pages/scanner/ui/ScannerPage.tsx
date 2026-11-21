@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 
 import CameraCapture from '../../../features/capture-image/ui/CameraCapture';
-import { OCRResult, OCRStatus } from '../../../features/ocr/model/types';
+import { OCRStatus, OfflineOCRResult } from '../../../features/ocr/model/types';
 import { OCRService } from '../../../features/ocr/services/ocrService';
 import OCRResultView from '../../../features/ocr/ui/OCRResultView';
 
@@ -19,25 +19,25 @@ export default function ScannerPage() {
   const [imageLoading, setImageLoading] = useState(false);
   const [imageError, setImageError] = useState(false);
 
-  // OCR States
+  // On-Device OCR States
   const [ocrStatus, setOcrStatus] = useState<OCRStatus>('idle');
-  const [ocrResult, setOcrResult] = useState<OCRResult | null>(null);
+  const [ocrResult, setOcrResult] = useState<OfflineOCRResult | null>(null);
   const [ocrError, setOcrError] = useState<string | null>(null);
 
-  // Handle OCR extraction
-  const handleExtract = async (forceTest = false) => {
+  // Trigger On-Device OCR extraction
+  const handleExtract = async () => {
     if (!selectedImage) return;
 
     try {
       setOcrStatus('processing');
       setOcrError(null);
-      const result = await OCRService.recognizeText(selectedImage, forceTest);
+      const result = await OCRService.recognizeText(selectedImage);
       setOcrResult(result);
       setOcrStatus('success');
     } catch (err: any) {
-      console.error('OCR processing error:', err);
+      console.error('Offline OCR processing error:', err);
       setOcrStatus('error');
-      setOcrError(err?.message || 'Failed to extract text from image.');
+      setOcrError(err?.message || 'Failed to recognize text on device.');
     }
   };
 
@@ -51,7 +51,7 @@ export default function ScannerPage() {
     setOcrError(null);
   };
 
-  // If OCR completed successfully, display OCR result review screen
+  // If OCR completed successfully, display on-device OCR result review screen
   if (selectedImage && ocrStatus === 'success' && ocrResult) {
     return (
       <SafeAreaView style={styles.container}>
@@ -59,24 +59,24 @@ export default function ScannerPage() {
           imageUri={selectedImage}
           result={ocrResult}
           onRetake={handleReset}
-          onReExtract={() => handleExtract(false)}
+          onReExtract={handleExtract}
         />
       </SafeAreaView>
     );
   }
 
-  // If an image was selected/captured, display preview with extraction actions
+  // If an image was selected/captured, display preview with extraction action
   if (selectedImage) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <Text style={styles.title}>
-            {ocrStatus === 'processing' ? 'Extracting Text & Table...' : 'Document Captured'}
+            {ocrStatus === 'processing' ? 'Processing On Device...' : 'Document Captured'}
           </Text>
           <Text style={styles.subtitle}>
             {ocrStatus === 'processing'
-              ? 'AI is analyzing lines, text, and tabular structure'
-              : 'Review your image and run OCR extraction'}
+              ? 'Analyzing text locally with Google ML Kit'
+              : 'Review your image and run offline text recognition'}
           </Text>
         </View>
 
@@ -110,11 +110,9 @@ export default function ScannerPage() {
           {ocrStatus === 'processing' && (
             <View style={styles.processingOverlay}>
               <ActivityIndicator size="large" color="#FFFFFF" />
-              <Text style={styles.processingText}>Processing with OCR...</Text>
+              <Text style={styles.processingText}>Recognizing Text On Device...</Text>
               <Text style={styles.processingSubText}>
-                {OCRService.hasApiKey()
-                  ? 'Connecting to Gemini Vision API'
-                  : 'Analyzing with local test parser'}
+                ⚡ 100% Offline • Hardware Accelerated • Private
               </Text>
             </View>
           )}
@@ -122,35 +120,24 @@ export default function ScannerPage() {
 
         {ocrError && (
           <View style={styles.errorBanner}>
-            <Text style={styles.errorBannerTitle}>Extraction Notice</Text>
+            <Text style={styles.errorBannerTitle}>Recognition Notice</Text>
             <Text style={styles.errorBannerText}>{ocrError}</Text>
           </View>
         )}
 
         <View style={styles.footer}>
           {ocrStatus === 'processing' ? (
-            <Text style={styles.waitText}>Please wait a moment...</Text>
+            <Text style={styles.waitText}>Processing document locally...</Text>
           ) : (
             <>
               <Pressable
                 style={styles.primaryButton}
-                onPress={() => handleExtract(false)}
+                onPress={handleExtract}
               >
                 <Text style={styles.primaryButtonText}>
-                  {OCRService.hasApiKey() ? '✨ Extract with Gemini AI' : '🚀 Extract Text & Table'}
+                  ⚡ Extract Text with On-Device OCR
                 </Text>
               </Pressable>
-
-              {!OCRService.hasApiKey() && (
-                <Pressable
-                  style={styles.secondaryButton}
-                  onPress={() => handleExtract(true)}
-                >
-                  <Text style={styles.secondaryButtonText}>
-                    🧪 Run Instant Demo Mock
-                  </Text>
-                </Pressable>
-              )}
 
               <Pressable style={styles.retakeButton} onPress={handleReset}>
                 <Text style={styles.retakeButtonText}>Capture Another Photo</Text>
@@ -221,13 +208,13 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
     gap: 12,
   },
   processingText: {
     color: '#FFFFFF',
     fontSize: 17,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   processingSubText: {
     color: '#94A3B8',
@@ -283,19 +270,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
-  },
-  secondaryButton: {
-    backgroundColor: '#EEF2FF',
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  secondaryButtonText: {
-    color: '#4338CA',
-    fontSize: 15,
-    fontWeight: '600',
   },
   retakeButton: {
     backgroundColor: '#F1F5F9',

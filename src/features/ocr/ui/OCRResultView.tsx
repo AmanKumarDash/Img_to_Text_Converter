@@ -1,21 +1,18 @@
 import React, { useState } from 'react';
 import {
   Image,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 
-import { OCRResult } from '../model/types';
-import { OCRService } from '../services/ocrService';
+import { OfflineOCRResult } from '../model/types';
 
 interface OCRResultViewProps {
   imageUri: string;
-  result: OCRResult;
+  result: OfflineOCRResult;
   onRetake: () => void;
   onReExtract: () => void;
 }
@@ -26,19 +23,10 @@ export default function OCRResultView({
   onRetake,
   onReExtract,
 }: OCRResultViewProps) {
-  const [activeTab, setActiveTab] = useState<'table' | 'raw'>('table');
+  const [activeTab, setActiveTab] = useState<'table' | 'raw' | 'blocks'>('table');
   const [showImage, setShowImage] = useState(false);
-  const [showKeyModal, setShowKeyModal] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState(OCRService.getApiKey() || '');
 
   const hasTable = result.table && result.table.rows && result.table.rows.length > 0;
-  const isMock = result.engine === 'mock-test';
-
-  const handleSaveApiKey = () => {
-    OCRService.setApiKey(apiKeyInput);
-    setShowKeyModal(false);
-    onReExtract();
-  };
 
   return (
     <View style={styles.container}>
@@ -46,18 +34,29 @@ export default function OCRResultView({
       <View style={styles.statusBar}>
         <View style={styles.statusBadge}>
           <Text style={styles.statusBadgeText}>
-            {isMock ? '🧪 Test OCR Engine' : '✨ Gemini Vision OCR'}
+            ⚡ Google ML Kit (On-Device & Offline)
           </Text>
         </View>
 
-        <Pressable
-          style={styles.keyButton}
-          onPress={() => setShowKeyModal(true)}
-        >
-          <Text style={styles.keyButtonText}>
-            {OCRService.hasApiKey() ? '🔑 API Key Set' : '⚙️ Setup API Key'}
-          </Text>
-        </Pressable>
+        <View style={styles.offlinePill}>
+          <Text style={styles.offlinePillText}>🔒 100% Private</Text>
+        </View>
+      </View>
+
+      {/* Summary Chips */}
+      <View style={styles.metricsContainer}>
+        <View style={styles.metricChip}>
+          <Text style={styles.metricLabel}>Blocks</Text>
+          <Text style={styles.metricValue}>{result.blockCount}</Text>
+        </View>
+        <View style={styles.metricChip}>
+          <Text style={styles.metricLabel}>Lines</Text>
+          <Text style={styles.metricValue}>{result.lineCount}</Text>
+        </View>
+        <View style={styles.metricChip}>
+          <Text style={styles.metricLabel}>Table Rows</Text>
+          <Text style={styles.metricValue}>{result.table?.rows?.length || 0}</Text>
+        </View>
       </View>
 
       {/* Collapsible Source Image Preview */}
@@ -67,7 +66,7 @@ export default function OCRResultView({
           onPress={() => setShowImage(!showImage)}
         >
           <Text style={styles.toggleImageText}>
-            {showImage ? '▲ Hide Original Image' : '▼ View Original Image'}
+            {showImage ? '▲ Hide Original Image' : '▼ View Original Image for Comparison'}
           </Text>
         </Pressable>
       </View>
@@ -82,7 +81,7 @@ export default function OCRResultView({
         </View>
       )}
 
-      {/* Tabs */}
+      {/* Navigation Tabs */}
       <View style={styles.tabContainer}>
         <Pressable
           style={[styles.tab, activeTab === 'table' && styles.activeTab]}
@@ -94,7 +93,7 @@ export default function OCRResultView({
               activeTab === 'table' && styles.activeTabText,
             ]}
           >
-            Structured Table ({result.table?.rows?.length || 0} rows)
+            Structured Table
           </Text>
         </Pressable>
 
@@ -108,14 +107,28 @@ export default function OCRResultView({
               activeTab === 'raw' && styles.activeTabText,
             ]}
           >
-            Raw Extracted Text
+            Full Text
+          </Text>
+        </Pressable>
+
+        <Pressable
+          style={[styles.tab, activeTab === 'blocks' && styles.activeTab]}
+          onPress={() => setActiveTab('blocks')}
+        >
+          <Text
+            style={[
+              styles.tabText,
+              activeTab === 'blocks' && styles.activeTabText,
+            ]}
+          >
+            Blocks ({result.blocks.length})
           </Text>
         </Pressable>
       </View>
 
       {/* Tab Content */}
       <View style={styles.contentContainer}>
-        {activeTab === 'table' ? (
+        {activeTab === 'table' && (
           hasTable ? (
             <ScrollView horizontal style={styles.horizontalScroll}>
               <ScrollView style={styles.verticalScroll}>
@@ -124,7 +137,7 @@ export default function OCRResultView({
                   <View style={styles.tableRowHeader}>
                     {result.table?.headers.map((header, idx) => (
                       <View key={idx} style={styles.tableCellHeader}>
-                        <Text style={styles.headerText}>{header}</Text>
+                        <Text style={styles.headerText}>{String(header ?? '')}</Text>
                       </View>
                     ))}
                   </View>
@@ -140,7 +153,9 @@ export default function OCRResultView({
                     >
                       {row.map((cell, cellIdx) => (
                         <View key={cellIdx} style={styles.tableCell}>
-                          <Text style={styles.cellText}>{cell}</Text>
+                          <Text style={styles.cellText}>
+                            {typeof cell === 'object' ? JSON.stringify(cell) : String(cell ?? '')}
+                          </Text>
                         </View>
                       ))}
                     </View>
@@ -151,15 +166,36 @@ export default function OCRResultView({
           ) : (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>
-                No table detected. Check the Raw Extracted Text tab.
+                No table detected. Check the Full Text tab.
               </Text>
             </View>
           )
-        ) : (
+        )}
+
+        {activeTab === 'raw' && (
           <ScrollView style={styles.rawTextContainer}>
             <Text style={styles.rawText} selectable>
               {result.rawText}
             </Text>
+          </ScrollView>
+        )}
+
+        {activeTab === 'blocks' && (
+          <ScrollView style={styles.blocksContainer}>
+            {result.blocks.map((block, bIdx) => (
+              <View key={bIdx} style={styles.blockCard}>
+                <View style={styles.blockHeader}>
+                  <Text style={styles.blockTitle}>Block #{bIdx + 1}</Text>
+                  {block.frame && (
+                    <Text style={styles.blockFrame}>
+                      Top: {Math.round(block.frame.top)} Left: {Math.round(block.frame.left)}
+                    </Text>
+                  )}
+                </View>
+                <Text style={styles.blockContent}>{block.text}</Text>
+                <Text style={styles.blockLineCount}>{block.lines.length} lines detected</Text>
+              </View>
+            ))}
           </ScrollView>
         )}
       </View>
@@ -171,47 +207,9 @@ export default function OCRResultView({
         </Pressable>
 
         <Pressable style={styles.reExtractButton} onPress={onReExtract}>
-          <Text style={styles.reExtractButtonText}>Re-extract</Text>
+          <Text style={styles.reExtractButtonText}>Retry OCR</Text>
         </Pressable>
       </View>
-
-      {/* API Key Modal */}
-      <Modal visible={showKeyModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Gemini Vision API Key</Text>
-            <Text style={styles.modalDescription}>
-              Enter your Google AI Studio Gemini API key to enable live cloud OCR and table extraction from any photo:
-            </Text>
-
-            <TextInput
-              style={styles.keyInput}
-              placeholder="Paste AIzaSy... key here"
-              placeholderTextColor="#94A3B8"
-              value={apiKeyInput}
-              onChangeText={setApiKeyInput}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-
-            <View style={styles.modalActions}>
-              <Pressable
-                style={styles.modalCancel}
-                onPress={() => setShowKeyModal(false)}
-              >
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </Pressable>
-
-              <Pressable
-                style={styles.modalSave}
-                onPress={handleSaveApiKey}
-              >
-                <Text style={styles.modalSaveText}>Save & Apply</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -227,33 +225,57 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingTop: 8,
-    paddingBottom: 8,
+    paddingBottom: 4,
   },
   statusBadge: {
-    backgroundColor: '#EEF2FF',
+    backgroundColor: '#EFF6FF',
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#C7D2FE',
+    borderColor: '#BFDBFE',
   },
   statusBadgeText: {
-    color: '#4338CA',
-    fontSize: 13,
-    fontWeight: '600',
+    color: '#1D4ED8',
+    fontSize: 12,
+    fontWeight: '700',
   },
-  keyButton: {
-    backgroundColor: '#F1F5F9',
+  offlinePill: {
+    backgroundColor: '#DCFCE7',
     paddingVertical: 6,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#BBF7D0',
   },
-  keyButtonText: {
-    color: '#334155',
-    fontSize: 13,
-    fontWeight: '500',
+  offlinePillText: {
+    color: '#15803D',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  metricsContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    gap: 8,
+  },
+  metricChip: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    paddingVertical: 6,
+    alignItems: 'center',
+  },
+  metricLabel: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  metricValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
   },
   imageHeader: {
     paddingHorizontal: 16,
@@ -303,7 +325,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   tabText: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#64748B',
     fontWeight: '500',
   },
@@ -376,6 +398,43 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
     color: '#1E293B',
   },
+  blocksContainer: {
+    flex: 1,
+    padding: 12,
+  },
+  blockCard: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 10,
+  },
+  blockHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  blockTitle: {
+    fontWeight: '700',
+    fontSize: 13,
+    color: '#2563EB',
+  },
+  blockFrame: {
+    fontSize: 11,
+    color: '#94A3B8',
+  },
+  blockContent: {
+    fontSize: 13,
+    color: '#1E293B',
+    lineHeight: 18,
+  },
+  blockLineCount: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 6,
+    fontStyle: 'italic',
+  },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -419,69 +478,5 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '600',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalBox: {
-    width: '100%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 5,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 8,
-  },
-  modalDescription: {
-    fontSize: 14,
-    color: '#64748B',
-    marginBottom: 16,
-    lineHeight: 20,
-  },
-  keyInput: {
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
-    color: '#0F172A',
-    marginBottom: 20,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 12,
-  },
-  modalCancel: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-  },
-  modalCancelText: {
-    color: '#64748B',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  modalSave: {
-    backgroundColor: '#2563EB',
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 8,
-  },
-  modalSaveText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-    fontSize: 14,
   },
 });
