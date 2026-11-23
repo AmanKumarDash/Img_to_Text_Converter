@@ -15,6 +15,9 @@ import { OCRService } from '../../../features/ocr/services/ocrService';
 import OCRResultView from '../../../features/ocr/ui/OCRResultView';
 import { EditableTableData } from '../../../features/table-editor/model/types';
 import TableEditor from '../../../features/table-editor/ui/TableEditor';
+import { ExcelService } from '../../../features/export-excel/services/excelService';
+import { GeneratedWorkbookResult } from '../../../features/export-excel/model/types';
+import WorkbookStatusModal from '../../../features/export-excel/ui/WorkbookStatusModal';
 
 export default function ScannerPage() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -29,6 +32,26 @@ export default function ScannerPage() {
   // Table Editor State
   const [editingTableData, setEditingTableData] =
     useState<EditableTableData | null>(null);
+
+  // Excel Workbook State
+  const [workbookResult, setWorkbookResult] =
+    useState<GeneratedWorkbookResult | null>(null);
+  const [workbookError, setWorkbookError] = useState<string | null>(null);
+  const [showWorkbookModal, setShowWorkbookModal] = useState(false);
+
+  // Generate Excel Workbook from Table Data
+  const handleExportWorkbook = (tableData: EditableTableData) => {
+    try {
+      setWorkbookError(null);
+      const result = ExcelService.generateWorkbook(tableData);
+      setWorkbookResult(result);
+      setShowWorkbookModal(true);
+    } catch (err: any) {
+      console.error('Workbook generation error:', err);
+      setWorkbookError(err?.message || 'Failed to generate Excel workbook.');
+      setShowWorkbookModal(true);
+    }
+  };
 
   // Trigger On-Device OCR extraction
   const handleExtract = async () => {
@@ -61,13 +84,22 @@ export default function ScannerPage() {
   // If the user tapped "Edit Table", show the spreadsheet editor
   if (editingTableData) {
     return (
-      <TableEditor
-        initialData={editingTableData}
-        onBack={() => setEditingTableData(null)}
-        onContinueExport={(savedTable) => {
-          setEditingTableData(savedTable);
-        }}
-      />
+      <>
+        <TableEditor
+          initialData={editingTableData}
+          onBack={() => setEditingTableData(null)}
+          onContinueExport={(savedTable) => {
+            setEditingTableData(savedTable);
+            handleExportWorkbook(savedTable);
+          }}
+        />
+        <WorkbookStatusModal
+          visible={showWorkbookModal}
+          result={workbookResult}
+          error={workbookError}
+          onClose={() => setShowWorkbookModal(false)}
+        />
+      </>
     );
   }
 
