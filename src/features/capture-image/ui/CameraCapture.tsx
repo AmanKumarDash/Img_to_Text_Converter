@@ -137,7 +137,7 @@ export default function CameraCapture({
             <Image
               source={{ uri: photoUri }}
               style={styles.preview}
-              resizeMode="cover"
+              resizeMode="contain"
               onLoadStart={() => setImageLoading(true)}
               onLoadEnd={() => setImageLoading(false)}
               onError={() => {
@@ -258,7 +258,7 @@ const styles = StyleSheet.create({
     flex: 1,
     overflow: 'hidden',
     borderRadius: 18,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#0F172A',
   },
 
   preview: {
@@ -267,7 +267,7 @@ const styles = StyleSheet.create({
   },
 
   loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'rgba(245, 247, 251, 0.8)',

@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "Image to Excel",
+    "slug": "image-to-excel",
+    "version": "1.0.0",
+    "scheme": "imagetoexcel",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#F5F7FB"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.anonymous.imagetoexcel",
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Image to Excel to access your camera to capture document photos."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "8b054f7e-0faa-4933-83ce-30ed67cd313d"
+      }
+    }
+  }
+}
