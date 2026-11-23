@@ -13,6 +13,8 @@ import CameraCapture from '../../../features/capture-image/ui/CameraCapture';
 import { OCRStatus, OfflineOCRResult } from '../../../features/ocr/model/types';
 import { OCRService } from '../../../features/ocr/services/ocrService';
 import OCRResultView from '../../../features/ocr/ui/OCRResultView';
+import { EditableTableData } from '../../../features/table-editor/model/types';
+import TableEditor from '../../../features/table-editor/ui/TableEditor';
 
 export default function ScannerPage() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -23,6 +25,10 @@ export default function ScannerPage() {
   const [ocrStatus, setOcrStatus] = useState<OCRStatus>('idle');
   const [ocrResult, setOcrResult] = useState<OfflineOCRResult | null>(null);
   const [ocrError, setOcrError] = useState<string | null>(null);
+
+  // Table Editor State
+  const [editingTableData, setEditingTableData] =
+    useState<EditableTableData | null>(null);
 
   // Trigger On-Device OCR extraction
   const handleExtract = async () => {
@@ -49,7 +55,21 @@ export default function ScannerPage() {
     setOcrStatus('idle');
     setOcrResult(null);
     setOcrError(null);
+    setEditingTableData(null);
   };
+
+  // If the user tapped "Edit Table", show the spreadsheet editor
+  if (editingTableData) {
+    return (
+      <TableEditor
+        initialData={editingTableData}
+        onBack={() => setEditingTableData(null)}
+        onContinueExport={(savedTable) => {
+          setEditingTableData(savedTable);
+        }}
+      />
+    );
+  }
 
   // If OCR completed successfully, display on-device OCR result review screen
   if (selectedImage && ocrStatus === 'success' && ocrResult) {
@@ -60,6 +80,7 @@ export default function ScannerPage() {
           result={ocrResult}
           onRetake={handleReset}
           onReExtract={handleExtract}
+          onEditTable={(tableData) => setEditingTableData(tableData)}
         />
       </SafeAreaView>
     );

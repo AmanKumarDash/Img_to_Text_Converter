@@ -9,12 +9,15 @@ import {
 } from 'react-native';
 
 import { OfflineOCRResult } from '../model/types';
+import { EditableTableData } from '../../table-editor/model/types';
+import { normalizeOCRTable } from '../../table-editor/services/tableDataService';
 
 interface OCRResultViewProps {
   imageUri: string;
   result: OfflineOCRResult;
   onRetake: () => void;
   onReExtract: () => void;
+  onEditTable?: (tableData: EditableTableData) => void;
 }
 
 export default function OCRResultView({
@@ -22,6 +25,7 @@ export default function OCRResultView({
   result,
   onRetake,
   onReExtract,
+  onEditTable,
 }: OCRResultViewProps) {
   const [activeTab, setActiveTab] = useState<'table' | 'raw' | 'blocks'>('table');
   const [showImage, setShowImage] = useState(false);
@@ -209,6 +213,22 @@ export default function OCRResultView({
         <Pressable style={styles.reExtractButton} onPress={onReExtract}>
           <Text style={styles.reExtractButtonText}>Retry OCR</Text>
         </Pressable>
+
+        {onEditTable && (
+          <Pressable
+            style={styles.editTableButton}
+            onPress={() => {
+              const normalized = normalizeOCRTable(
+                result.table,
+                result.rawText,
+                imageUri
+              );
+              onEditTable(normalized);
+            }}
+          >
+            <Text style={styles.editTableButtonText}>Edit Table →</Text>
+          </Pressable>
+        )}
       </View>
     </View>
   );
@@ -478,5 +498,21 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '600',
+  },
+  editTableButton: {
+    flex: 1.4,
+    backgroundColor: '#16A34A',
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    shadowColor: '#16A34A',
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  editTableButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });
