@@ -16,8 +16,21 @@ export interface GeneratedWorkbookResult {
   suggestedFileName: string;
 }
 
+export interface SavedFileResult {
+  uri: string;
+  fileName: string;
+  byteSize: number;
+  savedAt: string;
+}
+
+export interface ShareFileResult {
+  success: boolean;
+  message?: string;
+}
+
 export interface ExportStatus {
-  status: 'idle' | 'generating' | 'success' | 'error';
+  status: 'idle' | 'generating' | 'saving' | 'saved' | 'sharing' | 'success' | 'error';
   result?: GeneratedWorkbookResult;
+  savedFile?: SavedFileResult;
   errorMessage?: string;
 }

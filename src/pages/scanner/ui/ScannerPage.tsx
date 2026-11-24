@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Pressable,
   SafeAreaView,
@@ -19,6 +20,17 @@ import { ExcelService } from '../../../features/export-excel/services/excelServi
 import { GeneratedWorkbookResult } from '../../../features/export-excel/model/types';
 import WorkbookStatusModal from '../../../features/export-excel/ui/WorkbookStatusModal';
 
+import {
+  DocumentDetectionResult,
+  DocumentDetectionService,
+  ReviewDocumentModal,
+} from '../../../features/document-detection';
+import {
+  CollectionScreen,
+  NewDocumentRecordInput,
+  useDocumentCollection,
+} from '../../../features/document-collection';
+
 export default function ScannerPage() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [imageLoading, setImageLoading] = useState(false);
@@ -29,7 +41,22 @@ export default function ScannerPage() {
   const [ocrResult, setOcrResult] = useState<OfflineOCRResult | null>(null);
   const [ocrError, setOcrError] = useState<string | null>(null);
 
-  // Table Editor State
+  // Document Detection & Review States
+  const [detectionResult, setDetectionResult] =
+    useState<DocumentDetectionResult | null>(null);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [showCollectionScreen, setShowCollectionScreen] = useState(false);
+
+  // Multi-Scan Document Collection Hook
+  const {
+    records,
+    addRecord,
+    updateRecord,
+    deleteRecord,
+    clearCollection,
+  } = useDocumentCollection();
+
+  // Table Editor State (Single Table Mode)
   const [editingTableData, setEditingTableData] =
     useState<EditableTableData | null>(null);
 
@@ -39,8 +66,8 @@ export default function ScannerPage() {
   const [workbookError, setWorkbookError] = useState<string | null>(null);
   const [showWorkbookModal, setShowWorkbookModal] = useState(false);
 
-  // Generate Excel Workbook from Table Data
-  const handleExportWorkbook = (tableData: EditableTableData) => {
+  // Generate Excel Workbook from Single Table Data
+  const handleExportSingleTable = (tableData: EditableTableData) => {
     try {
       setWorkbookError(null);
       const result = ExcelService.generateWorkbook(tableData);
@@ -53,7 +80,25 @@ export default function ScannerPage() {
     }
   };
 
-  // Trigger On-Device OCR extraction
+  // Generate Excel Workbook from Complete Document Collection
+  const handleExportCollection = () => {
+    try {
+      setWorkbookError(null);
+      if (records.length === 0) {
+        Alert.alert('Empty Collection', 'No documents in collection to export.');
+        return;
+      }
+      const result = ExcelService.generateCollectionWorkbook(records);
+      setWorkbookResult(result);
+      setShowWorkbookModal(true);
+    } catch (err: any) {
+      console.error('Collection export error:', err);
+      setWorkbookError(err?.message || 'Failed to export document collection.');
+      setShowWorkbookModal(true);
+    }
+  };
+
+  // Trigger On-Device OCR extraction & Document Type Detection
   const handleExtract = async () => {
     if (!selectedImage) return;
 
@@ -63,10 +108,44 @@ export default function ScannerPage() {
       const result = await OCRService.recognizeText(selectedImage);
       setOcrResult(result);
       setOcrStatus('success');
+
+      // Run automatic document classification
+      const detected = DocumentDetectionService.detectDocumentType(result.rawText);
+      setDetectionResult(detected);
+      setShowReviewModal(true);
     } catch (err: any) {
       console.error('Offline OCR processing error:', err);
       setOcrStatus('error');
       setOcrError(err?.message || 'Failed to recognize text on device.');
+    }
+  };
+
+  // Handle adding reviewed record to the multi-scan collection
+  const handleSaveToCollection = async (input: NewDocumentRecordInput) => {
+    try {
+      setShowReviewModal(false);
+      await addRecord(input);
+      const newTotal = records.length + 1;
+
+      Alert.alert(
+        '✓ Added to Collection',
+        `Record #${newTotal} (${input.documentTypeLabel}) was added to your collection. Total records: ${newTotal}.`,
+        [
+          {
+            text: '📷 Scan Next Document',
+            onPress: () => handleReset(),
+          },
+          {
+            text: '📋 View Collection',
+            onPress: () => {
+              handleReset();
+              setShowCollectionScreen(true);
+            },
+          },
+        ]
+      );
+    } catch (err: any) {
+      Alert.alert('Save Error', err?.message || 'Failed to save record to collection.');
     }
   };
 
@@ -79,9 +158,37 @@ export default function ScannerPage() {
     setOcrResult(null);
     setOcrError(null);
     setEditingTableData(null);
+    setDetectionResult(null);
+    setShowReviewModal(false);
   };
 
-  // If the user tapped "Edit Table", show the spreadsheet editor
+  // 1. If Collection Screen is opened, show full multi-scan management view
+  if (showCollectionScreen) {
+    return (
+      <>
+        <CollectionScreen
+          records={records}
+          onScanNext={() => {
+            setShowCollectionScreen(false);
+            handleReset();
+          }}
+          onExportExcel={handleExportCollection}
+          onUpdateRecord={(id, updates) => updateRecord(id, updates)}
+          onDeleteRecord={(id) => deleteRecord(id)}
+          onClearCollection={clearCollection}
+          onBack={() => setShowCollectionScreen(false)}
+        />
+        <WorkbookStatusModal
+          visible={showWorkbookModal}
+          result={workbookResult}
+          error={workbookError}
+          onClose={() => setShowWorkbookModal(false)}
+        />
+      </>
+    );
+  }
+
+  // 2. If the user tapped "Edit Table" (Single Table Mode), show spreadsheet editor
   if (editingTableData) {
     return (
       <>
@@ -90,7 +197,7 @@ export default function ScannerPage() {
           onBack={() => setEditingTableData(null)}
           onContinueExport={(savedTable) => {
             setEditingTableData(savedTable);
-            handleExportWorkbook(savedTable);
+            handleExportSingleTable(savedTable);
           }}
         />
         <WorkbookStatusModal
@@ -103,7 +210,7 @@ export default function ScannerPage() {
     );
   }
 
-  // If OCR completed successfully, display on-device OCR result review screen
+  // 3. If OCR completed successfully, display on-device OCR result review screen
   if (selectedImage && ocrStatus === 'success' && ocrResult) {
     return (
       <SafeAreaView style={styles.container}>
@@ -114,11 +221,40 @@ export default function ScannerPage() {
           onReExtract={handleExtract}
           onEditTable={(tableData) => setEditingTableData(tableData)}
         />
+
+        {/* Floating Identity Review Trigger */}
+        <View style={styles.reviewBar}>
+          <Pressable
+            style={styles.reviewBarBtn}
+            onPress={() => setShowReviewModal(true)}
+          >
+            <Text style={styles.reviewBarBtnText}>
+              🪪 Review Identity Fields ({detectionResult?.label || 'Document'})
+            </Text>
+          </Pressable>
+        </View>
+
+        {/* Identity Document Review & Extraction Modal */}
+        <ReviewDocumentModal
+          visible={showReviewModal}
+          imageUri={selectedImage}
+          detectionResult={detectionResult}
+          nextIndex={records.length + 1}
+          onSaveToCollection={handleSaveToCollection}
+          onDiscard={() => setShowReviewModal(false)}
+        />
+
+        <WorkbookStatusModal
+          visible={showWorkbookModal}
+          result={workbookResult}
+          error={workbookError}
+          onClose={() => setShowWorkbookModal(false)}
+        />
       </SafeAreaView>
     );
   }
 
-  // If an image was selected/captured, display preview with extraction action
+  // 4. If an image was selected/captured, display preview with extraction action
   if (selectedImage) {
     return (
       <SafeAreaView style={styles.container}>
@@ -202,9 +338,21 @@ export default function ScannerPage() {
     );
   }
 
-  // Live camera screen
+  // 5. Live camera screen with top Collection counter button
   return (
     <SafeAreaView style={styles.container}>
+      {/* Top Floating Collection Bar */}
+      <View style={styles.topCameraBar}>
+        <Pressable
+          style={styles.collectionBadgeBtn}
+          onPress={() => setShowCollectionScreen(true)}
+        >
+          <Text style={styles.collectionBadgeText}>
+            📁 View Collection ({records.length})
+          </Text>
+        </Pressable>
+      </View>
+
       <CameraCapture
         onImageCaptured={(imageUri) => {
           setSelectedImage(imageUri);
@@ -218,6 +366,28 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F7FB',
+  },
+  topCameraBar: {
+    position: 'absolute',
+    top: 50,
+    left: 20,
+    right: 20,
+    zIndex: 10,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  collectionBadgeBtn: {
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  collectionBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
   header: {
     paddingHorizontal: 20,
@@ -340,5 +510,23 @@ const styles = StyleSheet.create({
     color: '#64748B',
     paddingVertical: 16,
     fontSize: 14,
+  },
+  reviewBar: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  reviewBarBtn: {
+    backgroundColor: '#0F172A',
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  reviewBarBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
