@@ -26,6 +26,16 @@
         {
           "cameraPermission": "Allow Image to Excel to access your camera to capture document photos."
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "buildArchs": [
+              "arm64-v8a"
+            ]
+          }
+        }
       ]
     ],
     "extra": {
