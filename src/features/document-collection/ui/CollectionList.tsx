@@ -48,15 +48,27 @@ export default function CollectionList({
               <Text style={styles.indexText}>#{item.index}</Text>
             </View>
 
-            <View
-              style={[
-                styles.typeTag,
-                item.documentType === 'OMAN_ID' && styles.typeOmanId,
-                item.documentType === 'OMAN_DL' && styles.typeOmanDl,
-                item.documentType === 'INDIAN_PASSPORT' && styles.typePassport,
-              ]}
-            >
-              <Text style={styles.typeText}>{item.documentTypeLabel}</Text>
+            <View style={styles.headerRight}>
+              {item.backImageUri ? (
+                <View style={styles.sidesTagDual}>
+                  <Text style={styles.sidesTagTextDual}>Front & Back</Text>
+                </View>
+              ) : (
+                <View style={styles.sidesTagSingle}>
+                  <Text style={styles.sidesTagTextSingle}>Front Only</Text>
+                </View>
+              )}
+
+              <View
+                style={[
+                  styles.typeTag,
+                  item.documentType === 'OMAN_ID' && styles.typeOmanId,
+                  item.documentType === 'OMAN_DL' && styles.typeOmanDl,
+                  item.documentType === 'INDIAN_PASSPORT' && styles.typePassport,
+                ]}
+              >
+                <Text style={styles.typeText}>{item.documentTypeLabel}</Text>
+              </View>
             </View>
           </View>
 
@@ -151,6 +163,37 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#1D4ED8',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  sidesTagDual: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
+  sidesTagTextDual: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  sidesTagSingle: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  sidesTagTextSingle: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#64748B',
   },
   typeTag: {
     paddingHorizontal: 10,

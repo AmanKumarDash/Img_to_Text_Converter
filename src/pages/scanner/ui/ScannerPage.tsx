@@ -5,6 +5,7 @@ import {
   Image,
   Pressable,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -23,6 +24,8 @@ import WorkbookStatusModal from '../../../features/export-excel/ui/WorkbookStatu
 import {
   DocumentDetectionResult,
   DocumentDetectionService,
+  DocumentFieldExtractor,
+  ExtractedDocumentFields,
   ReviewDocumentModal,
 } from '../../../features/document-detection';
 import {
@@ -32,18 +35,29 @@ import {
 } from '../../../features/document-collection';
 
 export default function ScannerPage() {
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  // Captured Images: Front and Back sides
+  const [frontImage, setFrontImage] = useState<string | null>(null);
+  const [backImage, setBackImage] = useState<string | null>(null);
+  const [isCapturingBack, setIsCapturingBack] = useState(false);
+
+  // Image loading / error states
   const [imageLoading, setImageLoading] = useState(false);
   const [imageError, setImageError] = useState(false);
 
   // On-Device OCR States
   const [ocrStatus, setOcrStatus] = useState<OCRStatus>('idle');
-  const [ocrResult, setOcrResult] = useState<OfflineOCRResult | null>(null);
   const [ocrError, setOcrError] = useState<string | null>(null);
+  const [ocrProgressMessage, setOcrProgressMessage] = useState<string>('');
+  const [singleTableResult, setSingleTableResult] =
+    useState<OfflineOCRResult | null>(null);
 
   // Document Detection & Review States
   const [detectionResult, setDetectionResult] =
     useState<DocumentDetectionResult | null>(null);
+  const [extractedFields, setExtractedFields] =
+    useState<ExtractedDocumentFields | null>(null);
+  const [frontRawText, setFrontRawText] = useState<string>('');
+  const [backRawText, setBackRawText] = useState<string>('');
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [showCollectionScreen, setShowCollectionScreen] = useState(false);
 
@@ -98,25 +112,68 @@ export default function ScannerPage() {
     }
   };
 
-  // Trigger On-Device OCR extraction & Document Type Detection
-  const handleExtract = async () => {
-    if (!selectedImage) return;
-
+  // Process and Extract text from one or both sides
+  const handleProcessImages = async (
+    frontUri: string,
+    backUri?: string | null
+  ) => {
     try {
       setOcrStatus('processing');
       setOcrError(null);
-      const result = await OCRService.recognizeText(selectedImage);
-      setOcrResult(result);
-      setOcrStatus('success');
 
-      // Run automatic document classification
-      const detected = DocumentDetectionService.detectDocumentType(result.rawText);
+      // 1. Process Front Side
+      setOcrProgressMessage(
+        backUri ? 'Recognizing text on Front side...' : 'Recognizing text on device...'
+      );
+      const frontRes = await OCRService.recognizeText(frontUri);
+      setSingleTableResult(frontRes);
+      setFrontRawText(frontRes.rawText);
+
+      let backRes: OfflineOCRResult | null = null;
+      let backText = '';
+
+      // 2. Process Back Side (if captured)
+      if (backUri) {
+        setOcrProgressMessage('Recognizing text on Back side...');
+        try {
+          backRes = await OCRService.recognizeText(backUri);
+          backText = backRes.rawText;
+          setBackRawText(backText);
+        } catch (backErr: any) {
+          console.warn('Back side OCR warning (proceeding with front):', backErr);
+          // If back OCR fails, preserve front results gracefully
+          Alert.alert(
+            'Back Side OCR Notice',
+            'Back side text recognition had difficulty reading text. Continuing with front side information.'
+          );
+        }
+      }
+
+      // 3. Combine OCR texts for document detection
+      const combinedRaw = backText
+        ? `${frontRes.rawText}\n--- BACK SIDE ---\n${backText}`
+        : frontRes.rawText;
+
+      // 4. Run automatic document classification
+      const detected = DocumentDetectionService.detectDocumentType(combinedRaw);
       setDetectionResult(detected);
+
+      // 5. Extract fields using dual-side extraction logic
+      const mergedFields = DocumentFieldExtractor.extractDualSideFields(
+        detected.documentType,
+        frontRes.rawText,
+        backText
+      );
+      setExtractedFields(mergedFields);
+
+      setOcrStatus('success');
       setShowReviewModal(true);
     } catch (err: any) {
-      console.error('Offline OCR processing error:', err);
+      console.error('OCR processing error:', err);
       setOcrStatus('error');
       setOcrError(err?.message || 'Failed to recognize text on device.');
+    } finally {
+      setOcrProgressMessage('');
     }
   };
 
@@ -126,10 +183,11 @@ export default function ScannerPage() {
       setShowReviewModal(false);
       await addRecord(input);
       const newTotal = records.length + 1;
+      const sideLabel = input.backImageUri ? 'Front & Back' : 'Front Only';
 
       Alert.alert(
         '✓ Added to Collection',
-        `Record #${newTotal} (${input.documentTypeLabel}) was added to your collection. Total records: ${newTotal}.`,
+        `Record #${newTotal} (${input.documentTypeLabel} • ${sideLabel}) added successfully. Total records in collection: ${newTotal}.`,
         [
           {
             text: '📷 Scan Next Document',
@@ -149,16 +207,22 @@ export default function ScannerPage() {
     }
   };
 
-  // Reset all states back to camera capture
+  // Reset all scanning states back to initial front camera capture
   const handleReset = () => {
-    setSelectedImage(null);
+    setFrontImage(null);
+    setBackImage(null);
+    setIsCapturingBack(false);
     setImageError(false);
     setImageLoading(false);
     setOcrStatus('idle');
-    setOcrResult(null);
+    setSingleTableResult(null);
     setOcrError(null);
+    setOcrProgressMessage('');
     setEditingTableData(null);
     setDetectionResult(null);
+    setExtractedFields(null);
+    setFrontRawText('');
+    setBackRawText('');
     setShowReviewModal(false);
   };
 
@@ -210,15 +274,15 @@ export default function ScannerPage() {
     );
   }
 
-  // 3. If OCR completed successfully, display on-device OCR result review screen
-  if (selectedImage && ocrStatus === 'success' && ocrResult) {
+  // 3. If OCR completed successfully and Review modal is closed, show raw OCR review
+  if (frontImage && ocrStatus === 'success' && singleTableResult) {
     return (
       <SafeAreaView style={styles.container}>
         <OCRResultView
-          imageUri={selectedImage}
-          result={ocrResult}
+          imageUri={frontImage}
+          result={singleTableResult}
           onRetake={handleReset}
-          onReExtract={handleExtract}
+          onReExtract={() => handleProcessImages(frontImage, backImage)}
           onEditTable={(tableData) => setEditingTableData(tableData)}
         />
 
@@ -237,8 +301,12 @@ export default function ScannerPage() {
         {/* Identity Document Review & Extraction Modal */}
         <ReviewDocumentModal
           visible={showReviewModal}
-          imageUri={selectedImage}
+          frontImageUri={frontImage}
+          backImageUri={backImage}
           detectionResult={detectionResult}
+          initialFields={extractedFields}
+          frontRawText={frontRawText}
+          backRawText={backRawText}
           nextIndex={records.length + 1}
           onSaveToCollection={handleSaveToCollection}
           onDiscard={() => setShowReviewModal(false)}
@@ -254,21 +322,155 @@ export default function ScannerPage() {
     );
   }
 
-  // 4. If an image was selected/captured, display preview with extraction action
-  if (selectedImage) {
+  // 4. If currently scanning the Back side, show camera with front thumbnail in corner
+  if (isCapturingBack && frontImage) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <CameraCapture
+          title="Capture Back Side"
+          subtitle="Step 2 of 2: Flip document and capture the BACK side"
+          thumbnailUri={frontImage}
+          onCancel={() => setIsCapturingBack(false)}
+          cancelButtonText="Cancel Back Scan"
+          onImageCaptured={(backUri) => {
+            setBackImage(backUri);
+            setIsCapturingBack(false);
+          }}
+        />
+      </SafeAreaView>
+    );
+  }
+
+  // 5. If BOTH Front and Back sides are captured, display Dual-Side Preview & Process Screen
+  if (frontImage && backImage) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <Text style={styles.title}>
-            {ocrStatus === 'processing' ? 'Processing On Device...' : 'Document Captured'}
+            {ocrStatus === 'processing' ? 'Processing Both Sides...' : 'Both Sides Captured'}
           </Text>
           <Text style={styles.subtitle}>
             {ocrStatus === 'processing'
-              ? 'Analyzing text locally with Google ML Kit'
-              : 'Review your image and run offline text recognition'}
+              ? ocrProgressMessage || 'Analyzing text on device with Google ML Kit'
+              : 'Step 2 of 2 Complete • Front and Back sides ready to process'}
           </Text>
         </View>
 
+        {/* Dual Previews */}
+        <ScrollView
+          style={styles.dualScroll}
+          contentContainerStyle={styles.dualScrollContent}
+        >
+          {/* Front Preview Card */}
+          <View style={styles.sideCard}>
+            <View style={styles.sideCardHeader}>
+              <Text style={styles.sideCardTitle}>1. Front Side</Text>
+              <Pressable
+                onPress={() => {
+                  setFrontImage(null);
+                }}
+              >
+                <Text style={styles.retakeText}>Retake Front</Text>
+              </Pressable>
+            </View>
+            <View style={styles.sideImageWrapper}>
+              <Image
+                source={{ uri: frontImage }}
+                style={styles.sideImage}
+                resizeMode="contain"
+              />
+            </View>
+          </View>
+
+          {/* Back Preview Card */}
+          <View style={styles.sideCard}>
+            <View style={styles.sideCardHeader}>
+              <Text style={styles.sideCardTitle}>2. Back Side</Text>
+              <Pressable
+                onPress={() => {
+                  setBackImage(null);
+                  setIsCapturingBack(true);
+                }}
+              >
+                <Text style={styles.retakeText}>Retake Back</Text>
+              </Pressable>
+            </View>
+            <View style={styles.sideImageWrapper}>
+              <Image
+                source={{ uri: backImage }}
+                style={styles.sideImage}
+                resizeMode="contain"
+              />
+            </View>
+          </View>
+        </ScrollView>
+
+        {ocrError && (
+          <View style={styles.errorBanner}>
+            <Text style={styles.errorBannerTitle}>Recognition Notice</Text>
+            <Text style={styles.errorBannerText}>{ocrError}</Text>
+          </View>
+        )}
+
+        {/* Action Footer */}
+        <View style={styles.footer}>
+          {ocrStatus === 'processing' ? (
+            <View style={styles.processingRow}>
+              <ActivityIndicator size="small" color="#2563EB" />
+              <Text style={styles.waitText}>
+                {ocrProgressMessage || 'Processing document locally...'}
+              </Text>
+            </View>
+          ) : (
+            <>
+              <Pressable
+                style={styles.primaryButton}
+                onPress={() => handleProcessImages(frontImage, backImage)}
+              >
+                <Text style={styles.primaryButtonText}>
+                  ⚡ Process Both Sides (Extract All Fields)
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={styles.secondaryButton}
+                onPress={() => {
+                  // Cancel back scan and proceed with front only
+                  setBackImage(null);
+                  handleProcessImages(frontImage, null);
+                }}
+              >
+                <Text style={styles.secondaryButtonText}>
+                  Discard Back (Continue with Front Only)
+                </Text>
+              </Pressable>
+
+              <Pressable style={styles.textButton} onPress={handleReset}>
+                <Text style={styles.textButtonText}>Discard Both & Start Over</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // 6. If FRONT side ONLY is captured, display Front Preview with "Scan Back Side" or "Continue" (Step 2)
+  if (frontImage && !backImage && !isCapturingBack) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>
+            {ocrStatus === 'processing' ? 'Processing On Device...' : 'Front Side Captured'}
+          </Text>
+          <Text style={styles.subtitle}>
+            {ocrStatus === 'processing'
+              ? ocrProgressMessage || 'Analyzing text locally with Google ML Kit'
+              : 'Step 1 of 2 Complete • Capture the back side or continue with front only'}
+          </Text>
+        </View>
+
+        {/* Front Image Preview */}
         <View style={styles.previewContainer}>
           {imageLoading && (
             <View style={styles.loadingOverlay}>
@@ -278,13 +480,11 @@ export default function ScannerPage() {
 
           {imageError ? (
             <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>
-                Failed to load image preview.
-              </Text>
+              <Text style={styles.errorText}>Failed to load image preview.</Text>
             </View>
           ) : (
             <Image
-              source={{ uri: selectedImage }}
+              source={{ uri: frontImage }}
               style={styles.preview}
               resizeMode="contain"
               onLoadStart={() => setImageLoading(true)}
@@ -296,15 +496,9 @@ export default function ScannerPage() {
             />
           )}
 
-          {ocrStatus === 'processing' && (
-            <View style={styles.processingOverlay}>
-              <ActivityIndicator size="large" color="#FFFFFF" />
-              <Text style={styles.processingText}>Recognizing Text On Device...</Text>
-              <Text style={styles.processingSubText}>
-                ⚡ 100% Offline • Hardware Accelerated • Private
-              </Text>
-            </View>
-          )}
+          <View style={styles.stepBadgeOverlay}>
+            <Text style={styles.stepBadgeText}>Front Side ✓</Text>
+          </View>
         </View>
 
         {ocrError && (
@@ -314,22 +508,40 @@ export default function ScannerPage() {
           </View>
         )}
 
+        {/* Action Footer (Step 2 of workflow) */}
         <View style={styles.footer}>
           {ocrStatus === 'processing' ? (
-            <Text style={styles.waitText}>Processing document locally...</Text>
+            <View style={styles.processingRow}>
+              <ActivityIndicator size="small" color="#2563EB" />
+              <Text style={styles.waitText}>
+                {ocrProgressMessage || 'Processing document locally...'}
+              </Text>
+            </View>
           ) : (
             <>
+              {/* Button A: Scan Back Side */}
               <Pressable
                 style={styles.primaryButton}
-                onPress={handleExtract}
+                onPress={() => setIsCapturingBack(true)}
               >
                 <Text style={styles.primaryButtonText}>
-                  ⚡ Extract Text with On-Device OCR
+                  🔄 Scan Back Side
                 </Text>
               </Pressable>
 
+              {/* Button B: Continue with Front Only */}
+              <Pressable
+                style={styles.secondaryButton}
+                onPress={() => handleProcessImages(frontImage, null)}
+              >
+                <Text style={styles.secondaryButtonText}>
+                  ⚡ Continue with Front Only
+                </Text>
+              </Pressable>
+
+              {/* Retake Front */}
               <Pressable style={styles.retakeButton} onPress={handleReset}>
-                <Text style={styles.retakeButtonText}>Capture Another Photo</Text>
+                <Text style={styles.retakeButtonText}>Retake Front Photo</Text>
               </Pressable>
             </>
           )}
@@ -338,7 +550,7 @@ export default function ScannerPage() {
     );
   }
 
-  // 5. Live camera screen with top Collection counter button
+  // 7. Initial Live Camera Screen (Step 1: Capture Front Side)
   return (
     <SafeAreaView style={styles.container}>
       {/* Top Floating Collection Bar */}
@@ -354,8 +566,10 @@ export default function ScannerPage() {
       </View>
 
       <CameraCapture
+        title="Capture Front Side"
+        subtitle="Step 1 of 2: Align the FRONT side of your document"
         onImageCaptured={(imageUri) => {
-          setSelectedImage(imageUri);
+          setFrontImage(imageUri);
         }}
       />
     </SafeAreaView>
@@ -402,10 +616,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#64748B',
     marginTop: 4,
     textAlign: 'center',
+    paddingHorizontal: 12,
   },
   previewContainer: {
     flex: 1,
@@ -421,27 +636,66 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  stepBadgeOverlay: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    backgroundColor: 'rgba(22, 163, 74, 0.9)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  stepBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  dualScroll: {
+    flex: 1,
+  },
+  dualScrollContent: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 12,
+  },
+  sideCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  sideCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  sideCardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  retakeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#2563EB',
+  },
+  sideImageWrapper: {
+    height: 160,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: '#0F172A',
+  },
+  sideImage: {
+    width: '100%',
+    height: '100%',
+  },
   loadingOverlay: {
     ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'rgba(245, 247, 251, 0.8)',
-  },
-  processingOverlay: {
-    ...StyleSheet.absoluteFill,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.88)',
-    gap: 12,
-  },
-  processingText: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  processingSubText: {
-    color: '#94A3B8',
-    fontSize: 13,
   },
   errorContainer: {
     flex: 1,
@@ -479,6 +733,19 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     gap: 10,
   },
+  processingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 16,
+  },
+  waitText: {
+    textAlign: 'center',
+    color: '#1E293B',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   primaryButton: {
     backgroundColor: '#2563EB',
     paddingVertical: 16,
@@ -491,25 +758,41 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  secondaryButton: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#2563EB',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  secondaryButtonText: {
+    color: '#2563EB',
+    fontSize: 14,
     fontWeight: '700',
   },
   retakeButton: {
     backgroundColor: '#F1F5F9',
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
   },
   retakeButtonText: {
     color: '#475569',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
   },
-  waitText: {
-    textAlign: 'center',
+  textButton: {
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  textButtonText: {
     color: '#64748B',
-    paddingVertical: 16,
-    fontSize: 14,
+    fontSize: 13,
+    fontWeight: '500',
   },
   reviewBar: {
     paddingHorizontal: 16,

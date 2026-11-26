@@ -16,10 +16,20 @@ import {
 
 interface CameraCaptureProps {
   onImageCaptured: (imageUri: string) => void;
+  title?: string;
+  subtitle?: string;
+  thumbnailUri?: string | null;
+  onCancel?: () => void;
+  cancelButtonText?: string;
 }
 
 export default function CameraCapture({
   onImageCaptured,
+  title = 'Image Scanner',
+  subtitle,
+  thumbnailUri,
+  onCancel,
+  cancelButtonText = 'Cancel',
 }: CameraCaptureProps) {
   const cameraRef = useRef<CameraView>(null);
 
@@ -174,9 +184,15 @@ export default function CameraCapture({
   // Live camera preview
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>
-        Image Scanner
-      </Text>
+      <View style={styles.headerContainer}>
+        {onCancel && (
+          <Pressable style={styles.cancelHeaderBtn} onPress={onCancel}>
+            <Text style={styles.cancelHeaderBtnText}>← {cancelButtonText}</Text>
+          </Pressable>
+        )}
+        <Text style={styles.title}>{title}</Text>
+        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+      </View>
 
       <View style={styles.cameraContainer}>
         <CameraView
@@ -185,6 +201,13 @@ export default function CameraCapture({
           facing="back"
           onCameraReady={() => setCameraReady(true)}
         />
+
+        {thumbnailUri && (
+          <View style={styles.thumbnailOverlay}>
+            <Image source={{ uri: thumbnailUri }} style={styles.thumbnailImage} />
+            <Text style={styles.thumbnailText}>Front ✓</Text>
+          </View>
+        )}
       </View>
 
       {error && (
@@ -218,6 +241,55 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F7FB',
     padding: 16,
+  },
+  headerContainer: {
+    marginBottom: 12,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  cancelHeaderBtn: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    zIndex: 10,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: '#E2E8F0',
+  },
+  cancelHeaderBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  subtitle: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: -8,
+    marginBottom: 8,
+  },
+  thumbnailOverlay: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    borderRadius: 8,
+    padding: 4,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  thumbnailImage: {
+    width: 60,
+    height: 40,
+    borderRadius: 4,
+  },
+  thumbnailText: {
+    color: '#22C55E',
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 2,
   },
 
   center: {

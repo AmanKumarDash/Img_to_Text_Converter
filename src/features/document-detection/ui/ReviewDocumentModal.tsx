@@ -15,15 +15,19 @@ import {
   ExtractedDocumentFields,
   SupportedDocumentType,
 } from '../model/types';
-import { DocumentDetectionService } from '../services/documentDetectionService';
 import { DocumentFieldExtractor } from '../services/documentFieldExtractor';
 import { NewDocumentRecordInput } from '../../document-collection/model/types';
 
 interface ReviewDocumentModalProps {
   visible: boolean;
-  imageUri: string | null;
+  frontImageUri?: string | null;
+  backImageUri?: string | null;
+  imageUri?: string | null; // Backwards compatibility
   detectionResult: DocumentDetectionResult | null;
+  frontRawText?: string;
+  backRawText?: string;
   nextIndex: number;
+  initialFields?: ExtractedDocumentFields | null;
   onSaveToCollection: (record: NewDocumentRecordInput) => void;
   onDiscard: () => void;
 }
@@ -37,12 +41,21 @@ const DOCUMENT_OPTIONS: { type: SupportedDocumentType; label: string }[] = [
 
 export default function ReviewDocumentModal({
   visible,
+  frontImageUri,
+  backImageUri,
   imageUri,
   detectionResult,
+  frontRawText,
+  backRawText,
   nextIndex,
+  initialFields,
   onSaveToCollection,
   onDiscard,
 }: ReviewDocumentModalProps) {
+  const effectiveFront = frontImageUri || imageUri || null;
+  const effectiveBack = backImageUri || null;
+  const isDualSided = !!(effectiveFront && effectiveBack);
+
   const [selectedType, setSelectedType] = useState<SupportedDocumentType>('UNKNOWN');
   const [fields, setFields] = useState<ExtractedDocumentFields>({
     fullName: '',
@@ -54,28 +67,37 @@ export default function ReviewDocumentModal({
     gender: '',
     address: '',
   });
-  const [showImage, setShowImage] = useState(false);
 
-  // Initialize fields when detection result changes
+  const [showImage, setShowImage] = useState(false);
+  const [activeImageSide, setActiveImageSide] = useState<'front' | 'back'>('front');
+
+  // Initialize fields when detection result or initialFields change
   useEffect(() => {
-    if (detectionResult) {
+    if (initialFields) {
+      setFields(initialFields);
+      if (detectionResult) {
+        setSelectedType(detectionResult.documentType);
+      }
+    } else if (detectionResult) {
       const detected = detectionResult.documentType;
       setSelectedType(detected);
-      const extracted = DocumentFieldExtractor.extractFields(
+      const extracted = DocumentFieldExtractor.extractDualSideFields(
         detected,
-        detectionResult.rawText
+        frontRawText || detectionResult.rawText,
+        backRawText
       );
       setFields(extracted);
     }
-  }, [detectionResult]);
+  }, [detectionResult, initialFields, frontRawText, backRawText]);
 
   // When user switches document type manually, re-extract fields
   const handleTypeChange = (newType: SupportedDocumentType) => {
     setSelectedType(newType);
     if (detectionResult) {
-      const reExtracted = DocumentFieldExtractor.extractFields(
+      const reExtracted = DocumentFieldExtractor.extractDualSideFields(
         newType,
-        detectionResult.rawText
+        frontRawText || detectionResult.rawText,
+        backRawText
       );
       // Keep any user-typed values that are non-empty
       setFields((prev) => ({
@@ -106,22 +128,43 @@ export default function ReviewDocumentModal({
       expiryDate: fields.expiryDate.trim(),
       gender: fields.gender.trim(),
       address: fields.address.trim(),
-      imageUri: imageUri || undefined,
+      frontImageUri: effectiveFront || undefined,
+      backImageUri: effectiveBack || undefined,
+      imageUri: effectiveFront || undefined,
     });
   };
 
   if (!visible || !detectionResult) return null;
 
   const confidencePct = Math.round(detectionResult.confidence * 100);
+  const currentPreviewUri =
+    activeImageSide === 'back' && effectiveBack ? effectiveBack : effectiveFront;
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onDiscard}>
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Review Scanned Document</Text>
+          <View style={styles.headerRow}>
+            <Text style={styles.title}>Review Scanned Document</Text>
+            <View
+              style={[
+                styles.sidesBadge,
+                isDualSided ? styles.sidesBadgeDual : styles.sidesBadgeSingle,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.sidesBadgeText,
+                  isDualSided ? styles.sidesBadgeTextDual : styles.sidesBadgeTextSingle,
+                ]}
+              >
+                {isDualSided ? 'Front & Back ✓' : 'Front Only'}
+              </Text>
+            </View>
+          </View>
           <Text style={styles.subtitle}>
-            Record #{nextIndex} • Verify extracted data before adding to collection
+            Record #{nextIndex} • Verify combined information before adding to collection
           </Text>
         </View>
 
@@ -163,23 +206,66 @@ export default function ReviewDocumentModal({
           </View>
 
           {/* Collapsible Original Image Comparison */}
-          {imageUri && (
+          {(effectiveFront || effectiveBack) && (
             <View style={styles.imageCard}>
               <Pressable
                 style={styles.toggleImageRow}
                 onPress={() => setShowImage(!showImage)}
               >
                 <Text style={styles.toggleImageText}>
-                  {showImage ? '▲ Hide Original Photo' : '▼ Compare with Original Photo'}
+                  {showImage ? '▲ Hide Original Photos' : '▼ Compare with Original Photos'}
                 </Text>
               </Pressable>
+
               {showImage && (
-                <View style={styles.imageWrapper}>
-                  <Image
-                    source={{ uri: imageUri }}
-                    style={styles.previewImage}
-                    resizeMode="contain"
-                  />
+                <View style={styles.imageSection}>
+                  {isDualSided && (
+                    <View style={styles.imageSideTabs}>
+                      <Pressable
+                        style={[
+                          styles.imageSideTab,
+                          activeImageSide === 'front' && styles.imageSideTabActive,
+                        ]}
+                        onPress={() => setActiveImageSide('front')}
+                      >
+                        <Text
+                          style={[
+                            styles.imageSideTabText,
+                            activeImageSide === 'front' && styles.imageSideTabTextActive,
+                          ]}
+                        >
+                          Front Side
+                        </Text>
+                      </Pressable>
+
+                      <Pressable
+                        style={[
+                          styles.imageSideTab,
+                          activeImageSide === 'back' && styles.imageSideTabActive,
+                        ]}
+                        onPress={() => setActiveImageSide('back')}
+                      >
+                        <Text
+                          style={[
+                            styles.imageSideTabText,
+                            activeImageSide === 'back' && styles.imageSideTabTextActive,
+                          ]}
+                        >
+                          Back Side
+                        </Text>
+                      </Pressable>
+                    </View>
+                  )}
+
+                  {currentPreviewUri && (
+                    <View style={styles.imageWrapper}>
+                      <Image
+                        source={{ uri: currentPreviewUri }}
+                        style={styles.previewImage}
+                        resizeMode="contain"
+                      />
+                    </View>
+                  )}
                 </View>
               )}
             </View>
@@ -187,7 +273,12 @@ export default function ReviewDocumentModal({
 
           {/* Extracted Fields Form */}
           <View style={styles.formCard}>
-            <Text style={styles.sectionLabel}>EXTRACTED IDENTITY FIELDS</Text>
+            <View style={styles.formHeaderRow}>
+              <Text style={styles.sectionLabel}>EXTRACTED IDENTITY FIELDS</Text>
+              {isDualSided && (
+                <Text style={styles.mergedHint}>Merged from Front & Back</Text>
+              )}
+            </View>
 
             {/* Full Name */}
             <View style={styles.inputGroup}>
@@ -301,7 +392,7 @@ export default function ReviewDocumentModal({
           </Pressable>
 
           <Pressable style={styles.discardBtn} onPress={onDiscard}>
-            <Text style={styles.discardBtnText}>Discard & Scan Again</Text>
+            <Text style={styles.discardBtnText}>Discard & Start Over</Text>
           </Pressable>
         </View>
       </View>
@@ -322,15 +413,44 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
   },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   title: {
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: '700',
     color: '#0F172A',
   },
-  subtitle: {
-    fontSize: 13,
+  sidesBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  sidesBadgeDual: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#BBF7D0',
+  },
+  sidesBadgeSingle: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#E2E8F0',
+  },
+  sidesBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  sidesBadgeTextDual: {
+    color: '#15803D',
+  },
+  sidesBadgeTextSingle: {
     color: '#64748B',
-    marginTop: 2,
+  },
+  subtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 4,
   },
   scroll: {
     flex: 1,
@@ -411,6 +531,32 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#2563EB',
   },
+  imageSection: {
+    backgroundColor: '#0F172A',
+  },
+  imageSideTabs: {
+    flexDirection: 'row',
+    backgroundColor: '#1E293B',
+    padding: 6,
+    gap: 8,
+  },
+  imageSideTab: {
+    flex: 1,
+    paddingVertical: 6,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  imageSideTabActive: {
+    backgroundColor: '#2563EB',
+  },
+  imageSideTabText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  imageSideTabTextActive: {
+    color: '#FFFFFF',
+  },
   imageWrapper: {
     height: 180,
     backgroundColor: '#0F172A',
@@ -426,6 +572,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     gap: 12,
+  },
+  formHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  mergedHint: {
+    fontSize: 11,
+    color: '#059669',
+    fontWeight: '600',
   },
   row: {
     flexDirection: 'row',
