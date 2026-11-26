@@ -34,6 +34,65 @@ export class DocumentFieldExtractor {
   }
 
   /**
+   * Extracts and merges fields from both front and back sides of an identity document.
+   * If backText is omitted, empty, or null, performs single-sided extraction.
+   *
+   * @param documentType Detected or user-selected document type.
+   * @param frontText OCR text from the front side.
+   * @param backText Optional OCR text from the back side.
+   * @returns Unified ExtractedDocumentFields.
+   */
+  public static extractDualSideFields(
+    documentType: SupportedDocumentType,
+    frontText: string,
+    backText?: string | null
+  ): ExtractedDocumentFields {
+    const frontFields = this.extractFields(documentType, frontText || '');
+
+    if (!backText || typeof backText !== 'string' || backText.trim().length === 0) {
+      return frontFields;
+    }
+
+    const backFields = this.extractFields(documentType, backText);
+    return this.mergeFields(frontFields, backFields, documentType);
+  }
+
+  /**
+   * Merges fields from front and back sides using document-aware conflict resolution.
+   */
+  public static mergeFields(
+    front: ExtractedDocumentFields,
+    back: ExtractedDocumentFields,
+    docType: SupportedDocumentType
+  ): ExtractedDocumentFields {
+    return {
+      // Name: Front side is authoritative (MRZ, official header)
+      fullName: front.fullName || back.fullName || '',
+
+      // Document Number: Front side is authoritative (Civil No, Passport No, DL No)
+      documentNumber: front.documentNumber || back.documentNumber || '',
+
+      // Date of Birth: Either side (prefer front if present)
+      dateOfBirth: front.dateOfBirth || back.dateOfBirth || '',
+
+      // Nationality: Prefer specific nationality over empty
+      nationality: front.nationality || back.nationality || '',
+
+      // Issue Date: Back side often carries Issue Date on Oman IDs; take whichever is valid
+      issueDate: front.issueDate || back.issueDate || '',
+
+      // Expiry Date: Either side
+      expiryDate: front.expiryDate || back.expiryDate || '',
+
+      // Gender: Either side
+      gender: front.gender || back.gender || '',
+
+      // Address: Back side is authoritative for Indian Passports and Oman IDs
+      address: back.address || front.address || '',
+    };
+  }
+
+  /**
    * Extracts fields from an Indian Passport using MRZ (Machine Readable Zone) when present,
    * falling back to label-based heuristics.
    */

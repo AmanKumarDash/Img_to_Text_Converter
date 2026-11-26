@@ -14,7 +14,9 @@ export interface DocumentRecord {
   gender: string;
   address: string;
   scannedAt: string;
-  imageUri?: string;
+  frontImageUri?: string;
+  backImageUri?: string;
+  imageUri?: string; // Backwards compatibility alias for frontImageUri
 }
 
 export interface DocumentCollection {
